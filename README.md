@@ -1,0 +1,1 @@
+A quantidade em estoque é criada junto com a tabela e, em bancos existentes, adicionada com `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, preservando os produtos atuais com saldo inicial zero. A saída usa um `UPDATE` condicional que só subtrai quando há saldo suficiente, impedindo estoque negativo mesmo com requisições simultâneas.

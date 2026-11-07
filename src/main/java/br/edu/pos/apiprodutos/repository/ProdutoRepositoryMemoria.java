@@ -32,6 +32,40 @@ public class ProdutoRepositoryMemoria implements ProdutoRepository {
     }
 
     @Override
+    public boolean adicionarEstoque(Long id, int quantidade) {
+        Optional<Produto> produto = buscarPorId(id);
+        if (produto.isEmpty()
+                || produto.get().getQuantidadeEstoque()
+                > Integer.MAX_VALUE - quantidade) {
+            return false;
+        }
+        produto.get().setQuantidadeEstoque(
+                produto.get().getQuantidadeEstoque() + quantidade
+        );
+        return true;
+    }
+
+    @Override
+    public boolean retirarEstoque(Long id, int quantidade) {
+        Optional<Produto> produto = buscarPorId(id);
+        if (produto.isEmpty()
+                || produto.get().getQuantidadeEstoque() < quantidade) {
+            return false;
+        }
+        produto.get().setQuantidadeEstoque(
+                produto.get().getQuantidadeEstoque() - quantidade
+        );
+        return true;
+    }
+
+    @Override
+    public List<Produto> listarEstoqueBaixo(int limite) {
+        return produtos.stream()
+                .filter(produto -> produto.getQuantidadeEstoque() <= limite)
+                .toList();
+    }
+
+    @Override
     public void excluir(Long id) {
 
         produtos.removeIf(p -> p.getId().equals(id));

@@ -3,7 +3,7 @@ openapi: 3.0.3
 info:
   title: API de Produtos
   version: 1.0.0
-  description: API REST desenvolvida com Java 21 e Javalin.
+  description: API REST desenvolvida com Java 25 e Javalin.
 
 servers:
   - url: http://localhost:7000
@@ -45,6 +45,90 @@ paths:
                 $ref: '#/components/schemas/Produto'
         '400':
           description: Dados inválidos
+
+  /produtos/estoque-baixo:
+    get:
+      tags: [Produtos]
+      summary: Listar produtos com estoque baixo
+      parameters:
+        - name: limite
+          in: query
+          required: true
+          description: Quantidade máxima em estoque
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Produtos com quantidade em estoque menor ou igual ao limite
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Produto'
+        '400':
+          description: Limite inválido
+
+  /produtos/{id}/estoque/entrada:
+    post:
+      tags: [Produtos]
+      summary: Adicionar unidades ao estoque
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador do produto
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovimentacaoEstoque'
+      responses:
+        '200':
+          description: Estoque atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Produto'
+        '400':
+          description: Quantidade inválida
+        '404':
+          description: Produto não encontrado
+
+  /produtos/{id}/estoque/saida:
+    post:
+      tags: [Produtos]
+      summary: Retirar unidades do estoque
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Identificador do produto
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MovimentacaoEstoque'
+      responses:
+        '200':
+          description: Estoque atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Produto'
+        '400':
+          description: Quantidade inválida ou estoque insuficiente
+        '404':
+          description: Produto não encontrado
 
   /produtos/{id}:
     parameters:
@@ -114,6 +198,21 @@ components:
           type: number
           format: double
           example: 3500.00
+        quantidadeEstoque:
+          type: integer
+          minimum: 0
+          default: 0
+          example: 10
+
+    MovimentacaoEstoque:
+      type: object
+      required:
+        - quantidade
+      properties:
+        quantidade:
+          type: integer
+          minimum: 1
+          example: 10
 
     Produto:
       type: object
@@ -129,3 +228,6 @@ components:
           type: number
           format: double
           example: 3500.00
+        quantidadeEstoque:
+          type: integer
+          example: 10

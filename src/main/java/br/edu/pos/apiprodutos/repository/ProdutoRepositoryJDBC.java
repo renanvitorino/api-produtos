@@ -24,8 +24,8 @@ public class ProdutoRepositoryJDBC implements ProdutoRepository {
     private void inserir(Produto produto) {
 
         String sql = """
-                INSERT INTO produtos (nome, preco)
-                VALUES (?, ?)
+                INSERT INTO produtos (nome, preco, quantidade_estoque)
+                VALUES (?, ?, ?)
                 """;
 
         try (
@@ -38,6 +38,7 @@ public class ProdutoRepositoryJDBC implements ProdutoRepository {
 
             comando.setString(1, produto.getNome());
             comando.setDouble(2, produto.getPreco());
+            comando.setInt(3, produto.getQuantidadeEstoque());
 
             comando.executeUpdate();
 
@@ -92,7 +93,11 @@ public class ProdutoRepositoryJDBC implements ProdutoRepository {
 
         List<Produto> produtos = new ArrayList<>();
 
-        String sql = "SELECT id, nome, preco FROM produtos ORDER BY id";
+        String sql = """
+                SELECT id, nome, preco, quantidade_estoque
+                FROM produtos
+                ORDER BY id
+                """;
 
         try (
                 Connection conexao = Database.conectar();
@@ -118,7 +123,7 @@ public class ProdutoRepositoryJDBC implements ProdutoRepository {
     public Optional<Produto> buscarPorId(Long id) {
 
         String sql = """
-                SELECT id, nome, preco
+                SELECT id, nome, preco, quantidade_estoque
                 FROM produtos
                 WHERE id = ?
                 """;
@@ -148,6 +153,97 @@ public class ProdutoRepositoryJDBC implements ProdutoRepository {
     }
 
     @Override
+    public boolean adicionarEstoque(Long id, int quantidade) {
+
+        String sql = """
+                UPDATE produtos
+                SET quantidade_estoque = quantidade_estoque + ?
+                WHERE id = ? AND quantidade_estoque <= ?
+                """;
+
+        try (
+                Connection conexao = Database.conectar();
+                PreparedStatement comando = conexao.prepareStatement(sql)
+        ) {
+
+            comando.setInt(1, quantidade);
+            comando.setLong(2, id);
+            comando.setInt(3, Integer.MAX_VALUE - quantidade);
+
+            return comando.executeUpdate() == 1;
+
+        } catch (SQLException erro) {
+            throw new RuntimeException(
+                    "Erro ao adicionar estoque",
+                    erro
+            );
+        }
+    }
+
+    @Override
+    public boolean retirarEstoque(Long id, int quantidade) {
+
+        String sql = """
+                UPDATE produtos
+                SET quantidade_estoque = quantidade_estoque - ?
+                WHERE id = ? AND quantidade_estoque >= ?
+                """;
+
+        try (
+                Connection conexao = Database.conectar();
+                PreparedStatement comando = conexao.prepareStatement(sql)
+        ) {
+
+            comando.setInt(1, quantidade);
+            comando.setLong(2, id);
+            comando.setInt(3, quantidade);
+
+            return comando.executeUpdate() == 1;
+
+        } catch (SQLException erro) {
+            throw new RuntimeException(
+                    "Erro ao retirar estoque",
+                    erro
+            );
+        }
+    }
+
+    @Override
+    public List<Produto> listarEstoqueBaixo(int limite) {
+
+        List<Produto> produtos = new ArrayList<>();
+
+        String sql = """
+                SELECT id, nome, preco, quantidade_estoque
+                FROM produtos
+                WHERE quantidade_estoque <= ?
+                ORDER BY id
+                """;
+
+        try (
+                Connection conexao = Database.conectar();
+                PreparedStatement comando = conexao.prepareStatement(sql)
+        ) {
+
+            comando.setInt(1, limite);
+
+            try (ResultSet resultado = comando.executeQuery()) {
+                while (resultado.next()) {
+                    produtos.add(converterProduto(resultado));
+                }
+            }
+
+        } catch (SQLException erro) {
+            throw new RuntimeException(
+                    "Erro ao listar produtos com estoque baixo",
+                    erro
+            );
+        }
+
+        return produtos;
+    }
+
+    @Override
     public void excluir(Long id) {
 
         String sql = "DELETE FROM produtos WHERE id = ?";
@@ -174,7 +270,8 @@ public class ProdutoRepositoryJDBC implements ProdutoRepository {
         return new Produto(
                 resultado.getLong("id"),
                 resultado.getString("nome"),
-                resultado.getDouble("preco")
+                resultado.getDouble("preco"),
+                resultado.getInt("quantidade_estoque")
         );
     }
 }

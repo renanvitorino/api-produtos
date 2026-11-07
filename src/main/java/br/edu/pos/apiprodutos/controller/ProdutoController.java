@@ -6,6 +6,7 @@ import br.edu.pos.apiprodutos.service.ProdutoService;
 
 import io.javalin.Javalin;
 import io.javalin.http.Context;
+import io.javalin.http.BadRequestResponse;
 import io.javalin.openapi.HttpMethod;
 import io.javalin.http.HttpStatus;
 
@@ -15,9 +16,15 @@ import io.javalin.openapi.OpenApiResponse;
 import io.javalin.openapi.OpenApiRequestBody;
 import io.javalin.openapi.OpenApiParam;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.NoSuchElementException;
 
 public class ProdutoController {
+
+    private static final Logger LOGGER =
+            LoggerFactory.getLogger(ProdutoController.class);
 
     private final ProdutoService service;
 
@@ -28,6 +35,18 @@ public class ProdutoController {
     public void registrarRotas(Javalin app) {
 
         app.get("/produtos", this::listarProdutos);
+
+        app.get("/produtos/estoque-baixo", this::listarEstoqueBaixo);
+
+        app.post(
+                "/produtos/{id}/estoque/entrada",
+                this::entradaEstoque
+        );
+
+        app.post(
+                "/produtos/{id}/estoque/saida",
+                this::saidaEstoque
+        );
 
         app.get("/produtos/{id}", this::buscarProduto);
 
@@ -42,10 +61,21 @@ public class ProdutoController {
             ctx.json(new MensagemErro(erro.getMessage()));
         });
 
-
         app.exception(IllegalArgumentException.class, (erro, ctx) -> {
             ctx.status(HttpStatus.BAD_REQUEST);
             ctx.json(new MensagemErro(erro.getMessage()));
+        });
+
+        app.exception(BadRequestResponse.class, (erro, ctx) -> {
+            LOGGER.warn("Requisição JSON inválida: {}", erro.getMessage());
+            ctx.status(HttpStatus.BAD_REQUEST);
+            ctx.json(new MensagemErro("JSON inválido."));
+        });
+
+        app.exception(Exception.class, (erro, ctx) -> {
+            LOGGER.error("Erro não tratado ao processar requisição.", erro);
+            ctx.status(HttpStatus.INTERNAL_SERVER_ERROR);
+            ctx.json(new MensagemErro("Erro interno do servidor."));
         });
     }
 
@@ -93,7 +123,7 @@ public class ProdutoController {
     )
     public void buscarProduto(Context ctx) {
 
-        Long id = Long.parseLong(ctx.pathParam("id"));
+        Long id = parseId(ctx.pathParam("id"));
 
         Produto produto = service.buscarPorId(id);
 
@@ -124,14 +154,148 @@ public class ProdutoController {
     public void cadastrarProduto(Context ctx) {
 
         Produto dados = ctx.bodyAsClass(Produto.class);
+        if (dados == null) {
+            throw new IllegalArgumentException(
+                    "O corpo JSON deve conter os dados do produto."
+            );
+        }
 
         Produto produto = service.cadastrar(
                 dados.getNome(),
-                dados.getPreco()
+                dados.getPreco(),
+                dados.getQuantidadeEstoque()
         );
 
         ctx.status(HttpStatus.CREATED);
         ctx.json(produto);
+    }
+
+    @OpenApi(
+            path = "/produtos/{id}/estoque/entrada",
+            methods = {HttpMethod.POST},
+            summary = "Adicionar unidades ao estoque",
+            tags = {"Produtos"},
+            pathParams = {
+                    @OpenApiParam(
+                            name = "id",
+                            type = Long.class,
+                            description = "Identificador do produto",
+                            required = true
+                    )
+            },
+            requestBody = @OpenApiRequestBody(
+                    content = {
+                            @OpenApiContent(from = MovimentacaoEstoque.class)
+                    }
+            ),
+            responses = {
+                    @OpenApiResponse(
+                            status = "200",
+                            content = {
+                                    @OpenApiContent(from = Produto.class)
+                            }
+                    ),
+                    @OpenApiResponse(status = "400"),
+                    @OpenApiResponse(status = "404")
+            }
+    )
+    public void entradaEstoque(Context ctx) {
+        Long id = parseId(ctx.pathParam("id"));
+        MovimentacaoEstoque movimentacao =
+                ctx.bodyAsClass(MovimentacaoEstoque.class);
+        if (movimentacao == null) {
+            throw new IllegalArgumentException(
+                    "O corpo JSON deve conter a quantidade."
+            );
+        }
+
+        ctx.json(service.adicionarEstoque(id, movimentacao.quantidade()));
+    }
+
+    @OpenApi(
+            path = "/produtos/{id}/estoque/saida",
+            methods = {HttpMethod.POST},
+            summary = "Retirar unidades do estoque",
+            tags = {"Produtos"},
+            pathParams = {
+                    @OpenApiParam(
+                            name = "id",
+                            type = Long.class,
+                            description = "Identificador do produto",
+                            required = true
+                    )
+            },
+            requestBody = @OpenApiRequestBody(
+                    content = {
+                            @OpenApiContent(from = MovimentacaoEstoque.class)
+                    }
+            ),
+            responses = {
+                    @OpenApiResponse(
+                            status = "200",
+                            content = {
+                                    @OpenApiContent(from = Produto.class)
+                            }
+                    ),
+                    @OpenApiResponse(status = "400"),
+                    @OpenApiResponse(status = "404")
+            }
+    )
+    public void saidaEstoque(Context ctx) {
+        Long id = parseId(ctx.pathParam("id"));
+        MovimentacaoEstoque movimentacao =
+                ctx.bodyAsClass(MovimentacaoEstoque.class);
+        if (movimentacao == null) {
+            throw new IllegalArgumentException(
+                    "O corpo JSON deve conter a quantidade."
+            );
+        }
+
+        ctx.json(service.retirarEstoque(id, movimentacao.quantidade()));
+    }
+
+    @OpenApi(
+            path = "/produtos/estoque-baixo",
+            methods = {HttpMethod.GET},
+            summary = "Listar produtos com estoque baixo",
+            tags = {"Produtos"},
+            queryParams = {
+                    @OpenApiParam(
+                            name = "limite",
+                            type = Integer.class,
+                            description = "Quantidade máxima em estoque",
+                            required = true
+                    )
+            },
+            responses = {
+                    @OpenApiResponse(
+                            status = "200",
+                            content = {
+                                    @OpenApiContent(from = Produto[].class)
+                            }
+                    ),
+                    @OpenApiResponse(status = "400")
+            }
+    )
+    public void listarEstoqueBaixo(Context ctx) {
+        String parametro = ctx.queryParam("limite");
+        if (parametro == null) {
+            throw new IllegalArgumentException(
+                    "O parâmetro limite é obrigatório e deve ser um inteiro."
+            );
+        }
+
+        int limite;
+        try {
+            limite = Integer.parseInt(parametro);
+        } catch (NumberFormatException erro) {
+            throw new IllegalArgumentException(
+                    "O limite deve ser um inteiro.",
+                    erro
+            );
+        }
+
+        ctx.json(service.listarEstoqueBaixo(limite));
     }
 
 
@@ -166,9 +330,14 @@ public class ProdutoController {
     )
     public void atualizarProduto(Context ctx) {
 
-        Long id = Long.parseLong(ctx.pathParam("id"));
+        Long id = parseId(ctx.pathParam("id"));
 
         Produto dados = ctx.bodyAsClass(Produto.class);
+        if (dados == null) {
+            throw new IllegalArgumentException(
+                    "O corpo JSON deve conter os dados do produto."
+            );
+        }
 
         Produto atualizado = service.atualizar(
                 id,
@@ -200,14 +369,27 @@ public class ProdutoController {
     )
     public void excluirProduto(Context ctx) {
 
-        Long id = Long.parseLong(ctx.pathParam("id"));
+        Long id = parseId(ctx.pathParam("id"));
 
         service.excluir(id);
 
         ctx.status(HttpStatus.NO_CONTENT);
     }
 
-    
-    public record MensagemErro(String mensagem) {
+    private Long parseId(String valor) {
+        try {
+            return Long.parseLong(valor);
+        } catch (NumberFormatException erro) {
+            throw new IllegalArgumentException(
+                    "O ID do produto deve ser numérico.",
+                    erro
+            );
+        }
+    }
+
+    public record MovimentacaoEstoque(Integer quantidade) {
+    }
+
+    public record MensagemErro(String erro) {
     }
 }
